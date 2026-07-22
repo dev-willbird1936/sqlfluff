@@ -57,14 +57,20 @@ class Rule_ST06(BaseRule):
             context: The rule context containing parent stack
 
         Returns:
-            True if this SELECT is in a CREATE VIEW with explicit columns
+            True if this SELECT is in a CREATE VIEW or MATERIALIZED VIEW with explicit columns
         """
-        # Traverse parent stack looking for create_view_statement
+        # Traverse parent stack looking for a view statement.
         for parent in context.parent_stack:
-            if parent.is_type("create_view_statement"):
+            if parent.is_type(
+                "create_view_statement", "create_materialized_view_statement"
+            ):
                 # Check if the view has an explicit column list
                 # Look for a bracketed segment containing column references
                 for child in parent.segments:
+                    # An explicit output column list precedes AS. Bracketed
+                    # query bodies follow AS and must not suppress ST06.
+                    if child.is_type("keyword") and child.raw_upper == "AS":
+                        break
                     if child.is_type("bracketed"):
                         # Check if this bracketed segment contains column references
                         # ANSI-based dialects (Snowflake, PostgreSQL, etc.)
