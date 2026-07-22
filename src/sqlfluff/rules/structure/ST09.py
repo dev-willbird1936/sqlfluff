@@ -191,6 +191,7 @@ class Rule_ST09(BaseRule):
 
         # STEP 4.
         fixes: list[LintFix] = []
+        violation_without_fix = False
         anchor_segment = context.segment  # Default anchor
 
         for subcondition in column_operator_column_subconditions:
@@ -251,6 +252,13 @@ class Rule_ST09(BaseRule):
                 ):
                     anchor_segment = first_column_reference
 
+                # SQLite can derive comparison collation from the left operand.
+                # Without schema metadata, reordering these references is not
+                # semantics-preserving, so retain the diagnostic without a fix.
+                if context.dialect.name == "sqlite":
+                    violation_without_fix = True
+                    continue
+
                 fixes = (
                     fixes
                     + [
@@ -288,19 +296,18 @@ class Rule_ST09(BaseRule):
                 )
 
         # STEP 5.a.
-        if not fixes:
+        if not fixes and not violation_without_fix:
             return None
 
         # STEP 5.b.
-        else:
-            return LintResult(
-                anchor=anchor_segment,
-                fixes=fixes,
-                description=(
-                    "Joins should list the table referenced "
-                    f"{self.preferred_first_table_in_join_clause} first."
-                ),
-            )
+        return LintResult(
+            anchor=anchor_segment,
+            fixes=fixes,
+            description=(
+                "Joins should list the table referenced "
+                f"{self.preferred_first_table_in_join_clause} first."
+            ),
+        )
 
     @staticmethod
     def _split_list_by_segment_type(
