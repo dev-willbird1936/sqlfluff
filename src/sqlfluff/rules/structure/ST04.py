@@ -69,6 +69,29 @@ class Rule_ST04(BaseRule):
         case2_first_when = case2_children.first(
             sp.is_type("when_clause", "else_clause")
         ).get()
+        # Repeating a function or other volatile expression can change the
+        # result. Flattening would evaluate the simple-CASE operand only once.
+        # Snowflake sequence access is parsed as a column reference rather
+        # than a function, so guard NEXTVAL explicitly as well.
+        if any(
+            seg.is_type("function", "bare_function")
+            or (
+                seg.is_type("column_reference")
+                and seg.raw_upper.rsplit(".", 1)[-1] == "NEXTVAL"
+            )
+            for operand in (
+                case1_children.select(
+                    start_seg=case1_first_case, stop_seg=case1_first_when
+                ),
+                case2_children.select(
+                    start_seg=case2_first_case, stop_seg=case2_first_when
+                ),
+            )
+            for seg in operand.recursive_crawl(
+                "function", "bare_function", "column_reference"
+            )
+        ):
+            return LintResult()
         # The len() checks below are for safety, to ensure the CASE inside
         # the ELSE is not part of a larger expression. In that case, it's
         # not safe to simplify in this way -- we'd be deleting other code.
